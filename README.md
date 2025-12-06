@@ -24,9 +24,11 @@
 
 <div align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/TÊN_USER_CỦA_BẠN/TÊN_USER_CỦA_BẠN/output/profile-night-view.svg">
-    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/TÊN_USER_CỦA_BẠN/TÊN_USER_CỦA_BẠN/output/profile-green-animate.svg">
-    <img alt="GitHub 3D Contribution" src="https://raw.githubusercontent.com/TÊN_USER_CỦA_BẠN/TÊN_USER_CỦA_BẠN/output/profile-green-animate.svg">
+<source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Fiwpr06/Fiwpr06/output/profile-night-view.svg">
+    
+<source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/Fiwpr06/Fiwpr06/output/profile-green-animate.svg">
+    
+<img alt="Fiwpr06's GitHub 3D Contribution" src="https://raw.githubusercontent.com/Fiwpr06/Fiwpr06/output/profile-green-animate.svg">
   </picture>
 </div>
 
