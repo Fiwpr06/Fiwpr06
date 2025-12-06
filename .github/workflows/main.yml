@@ -1,0 +1,33 @@
+name: Generate 3D Contribution Graph
+
+on:
+  schedule:
+    - cron: "0 18 * * *" # Chạy 18:00 UTC hàng ngày
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: generate-github-profile-3d-contrib
+    permissions:
+      contents: write # Quyền ghi để push ảnh
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      # Bước tạo ảnh 3D
+      - name: Generate 3D Graph
+        uses: yoshi389111/github-profile-3d-contrib@0.7.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          USERNAME: ${{ github.repository_owner }}
+
+      # Bước push ảnh vào nhánh 'output' (hoặc main nếu bạn muốn lưu thẳng vào repo)
+      # Ở đây tôi cấu hình lưu vào nhánh 'output' thư mục 'profile-3d-contrib'
+      - name: Push to output branch
+        uses: crazy-max/ghaction-github-pages@v3.1.0
+        with:
+          target_branch: output
+          build_dir: profile-3d-contrib
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
