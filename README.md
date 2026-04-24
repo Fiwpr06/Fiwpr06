@@ -47,27 +47,27 @@
   <table style="width:100%;">
     <tr>
       <td width="66.5%">
-        <img src="https://github-profile-summary-cards.vercel.app/api/cards/profile-details?username=Fiwpr06&theme=react" alt="Fiwpr06" width="100%"/>
+        <img src="https://github-profile-summary-cards.vercel.app/api/cards/profile-details?username=Fiwpr06&theme=dracula" alt="Fiwpr06" width="100%"/>
       </td>
       <td width="33.5%">
-        <img src="https://github-profile-summary-cards.vercel.app/api/cards/repos-per-language?username=Fiwpr06&theme=react" alt="Fiwpr06" width="100%"/>
+        <img src="https://github-profile-summary-cards.vercel.app/api/cards/repos-per-language?username=Fiwpr06&theme=dracula" alt="Fiwpr06" width="100%"/>
       </td>
     </tr>
   </table>
   <table style="width:100%;">
     <tr>
       <td width="48.5%">
-       <img src="https://github-readme-stats.vercel.app/api?username=Fiwpr06&theme=react&hide_border=true&show_icons=true" alt="Fiwpr06" width="100%"/>
+       <img src="https://github-readme-stats.vercel.app/api?username=Fiwpr06&theme=dracula&hide_border=true&show_icons=true" alt="Fiwpr06" width="100%"/>
       </td>
       <td width="51.5%">
-        <img src="https://github-readme-streak-stats.herokuapp.com/?user=Fiwpr06&theme=react&hide_border=true&show_icons=true" alt="Fiwpr06" width="100%"/>
+        <img src="https://github-readme-streak-stats.herokuapp.com/?user=Fiwpr06&theme=dracula&hide_border=true&show_icons=true" alt="Fiwpr06" width="100%"/>
       </td>
     </tr>
   </table>
   <table style="width:100%;">
     <tr>
       <td width="100%">
-        <img src="https://github-readme-activity-graph.vercel.app/graph?username=Fiwpr06&theme=react-dark" alt="Fiwpr06" width="100%"/>
+        <img src="https://github-readme-activity-graph.vercel.app/graph?username=Fiwpr06&theme=dracula" alt="Fiwpr06" width="100%"/>
       </td>
     </tr>
   </table>
