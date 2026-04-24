@@ -31,9 +31,9 @@
   <h2>🔥 Contribution Activity</h2>
 
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Fiwpr06/Fiwpr06/output/profile-night-view.svg">
-    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/Fiwpr06/Fiwpr06/output/profile-green-animate.svg">
-    <img alt="Fiwpr06's GitHub 3D Contribution" src="https://raw.githubusercontent.com/Fiwpr06/Fiwpr06/output/profile-green-animate.svg">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Fiwpr06/Fiwpr06/output/github-contribution-grid-snake-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/Fiwpr06/Fiwpr06/output/github-contribution-grid-snake.svg">
+    <img alt="Fiwpr06's Contribution Snake" src="https://raw.githubusercontent.com/Fiwpr06/Fiwpr06/output/github-contribution-grid-snake.svg">
   </picture>
 
 </div>
@@ -44,16 +44,33 @@
 <div align="center">
   <h2>📊 GitHub Analytics</h2>
   
-  <a href="https://github.com/Fiwpr06">
-    <img width="350" height="180" src="https://github-profile-summary-cards.vercel.app/api/cards/stats?username=Fiwpr06&theme=radical" alt="GitHub Stats" />
-  </a>
-  <a href="https://github.com/Fiwpr06">
-    <img width="350" height="180" src="https://github-readme-stats-salesp07.vercel.app/api/top-langs/?username=Fiwpr06&hide=HTML&langs_count=8&layout=compact&theme=radical&hide_border=true&size_weight=0.2&count_weight=0.5&exclude_repo=github-readme-stats" alt="Repos Per Language" />
-  </a>
-  <br/>
-  <a href="https://git.io/streak-stats">
-    <img src="https://streak-stats.demolab.com?user=Fiwpr06&theme=radical&hide_border=true&short_numbers=true&date_format=M%20j%5B%2C%20Y%5D" alt="GitHub Streak" />
-  </a>
+  <table style="width:100%;">
+    <tr>
+      <td width="66.5%">
+        <img src="https://github-profile-summary-cards.vercel.app/api/cards/profile-details?username=Fiwpr06&theme=react" alt="Fiwpr06" width="100%"/>
+      </td>
+      <td width="33.5%">
+        <img src="https://github-profile-summary-cards.vercel.app/api/cards/repos-per-language?username=Fiwpr06&theme=react" alt="Fiwpr06" width="100%"/>
+      </td>
+    </tr>
+  </table>
+  <table style="width:100%;">
+    <tr>
+      <td width="48.5%">
+       <img src="https://github-readme-stats.vercel.app/api?username=Fiwpr06&theme=react&hide_border=true&show_icons=true" alt="Fiwpr06" width="100%"/>
+      </td>
+      <td width="51.5%">
+        <img src="https://github-readme-streak-stats.herokuapp.com/?user=Fiwpr06&theme=react&hide_border=true&show_icons=true" alt="Fiwpr06" width="100%"/>
+      </td>
+    </tr>
+  </table>
+  <table style="width:100%;">
+    <tr>
+      <td width="100%">
+        <img src="https://github-readme-activity-graph.vercel.app/graph?username=Fiwpr06&theme=react-dark" alt="Fiwpr06" width="100%"/>
+      </td>
+    </tr>
+  </table>
 
 </div>
 
