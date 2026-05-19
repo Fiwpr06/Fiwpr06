@@ -171,7 +171,7 @@
       <img src="https://github-readme-stats-salesp07.vercel.app/api?username=Fiwpr06&theme=dracula&hide_border=true&show_icons=true" alt="GitHub Stats" width="100%"/>
     </td>
     <td colspan="3" width="50%" align="center" style="border: 1px solid #e91e63; padding: 10px; background: #0D1117;">
-      <img src="https://github-readme-streak-stats.herokuapp.com?user=Fiwpr06&theme=dracula&hide_border=true" alt="GitHub Streak" width="100%"/>
+      <img src="https://streak-stats.demolab.com?user=Fiwpr06&theme=dracula&hide_border=true" alt="GitHub Streak" width="100%"/>
     </td>
   </tr>
   <tr>
