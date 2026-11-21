@@ -1,37 +1,1134 @@
-name: Generate Contribution Snake
+name: Dune Light × Interstellar Dark Profile
 
 on:
   schedule:
-    - cron: "0 18 * * *" # Chạy 18:00 UTC hàng ngày
-  workflow_dispatch:
+    - cron: "0 18 * * *" # Tự động cập nhật & xoay vòng 3 chế độ Activity lúc 18:00 UTC (01:00 giờ VN) hàng ngày
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      visual_mode:
+        description: "Chọn hiệu ứng Activity (auto-rotate tự đổi mỗi ngày: sweep / wave / transit)"
+        required: true
+        default: "auto-rotate"
+        type: choice
+        options:
+          - auto-rotate
+          - sweep
+          - wave
+          - transit
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    name: generate-github-contribution-grid-snake
+    name: generate-dual-theme-transparent-svgs
     permissions:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Generate snake animation
-        uses: Platane/snk@v3
-        with:
-          github_user_name: ${{ github.repository_owner }}
-          outputs: |
-            dist/github-contribution-grid-snake.svg
-            dist/github-contribution-grid-snake-dark.svg?palette=github-dark
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Push to output branch
-        uses: crazy-max/ghaction-github-pages@v3.1.0
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          target_branch: output
-          build_dir: dist
+          python-version: "3.11"
+
+      - name: Generate Transparent SVGs (Light = Dune · Dark = Interstellar)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_USERNAME: ${{ github.repository_owner }}
+          VISUAL_MODE: ${{ github.event.inputs.visual_mode || 'auto-rotate' }}
+        shell: python
+        run: |
+          import datetime
+          import json
+          import math
+          import os
+          import random
+          import shutil
+          import urllib.request
+          from xml.sax.saxutils import escape
+
+          USERNAME = os.environ.get("GITHUB_USERNAME", "Fiwpr06")
+          TOKEN = os.environ.get("GITHUB_TOKEN", "")
+          MODE = os.environ.get("VISUAL_MODE", "auto-rotate").strip().lower()
+          OUT_DIR = "dist"
+
+          os.makedirs(OUT_DIR, exist_ok=True)
+
+          FONT_SANS = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
+          FONT_MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+          MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+
+          # Quy tắc tô màu nổi bật ngôn ngữ:
+          # Mặc định chỉ tô nổi bật Java, Python, JavaScript; ngôn ngữ khác chỉ tô nổi bật nếu đạt >= 20%
+          CORE_ACCENT_LANGS = {"java", "python", "javascript"}
+
+          PALETTES = {
+              "light": {
+                  "key": "light",
+                  "is_dark": False,
+                  "text": "#1C1917",
+                  "muted": "#6B5E53",
+                  "subtle": "#9A8C7E",
+                  "hairline": "#E6DDD3",
+                  "track": "#F3EDE5",
+                  "empty": "#F3EDE5",
+                  # Dune Arrakis Daylight (ZERO blue): Alabaster Sand -> Sunlit Dune -> Golden Ochre -> Spice Terracotta -> Basalt Umber
+                  "levels": ["#F3EDE5", "#E8CFAF", "#DC9D5E", "#C85A17", "#2B1B12"],
+                  "accent": "#C85A17",
+                  "accent_mid": "#E07A2F",
+                  "accent_deep": "#8A370A",
+                  "accent_bars": ["#C85A17", "#E07A2F", "#8A370A", "#DC9D5E", "#A84810"],
+                  "neutral_bars": ["#A89B8E", "#C2B7AC", "#D6CEC6", "#E3DDD6", "#9A8C7E"],
+                  "mode_titles": {
+                      "sweep": "SHAI-HULUD SWEEP",
+                      "wave": "ARRAKIS RIDGE",
+                      "transit": "ORNITHOPTER TRANSIT",
+                  },
+              },
+              "dark": {
+                  "key": "dark",
+                  "is_dark": True,
+                  "text": "#E6EDF3",
+                  "muted": "#7D8590",
+                  "subtle": "#545D68",
+                  "hairline": "#30363D",
+                  "track": "#21262D",
+                  "empty": "#21262D",
+                  # Interstellar 70mm Dark: Pitch Void -> Solar Gold -> Incandescent White-Gold
+                  "levels": ["#21262D", "#5C3116", "#9A531E", "#E29B42", "#FFF1CC"],
+                  "accent": "#E29B42",
+                  "accent_mid": "#FFF5DF",
+                  "accent_deep": "#7A3E14",
+                  "accent_bars": ["#E29B42", "#D18630", "#F2C06B", "#B56A1E", "#FFF1CC"],
+                  "neutral_bars": ["#3B536E", "#2D4259", "#223447", "#1B2A3A", "#162230"],
+                  "mode_titles": {
+                      "sweep": "EVENT HORIZON",
+                      "wave": "MILLER'S WAVE",
+                      "transit": "RANGER WARP",
+                  },
+              },
+          }
+
+
+          def format_strict_key_times(times) -> str:
+              """Guarantee strictly monotonically increasing SMIL keyTimes in [0, 1] after 4-decimal rounding."""
+              n = len(times)
+              if n < 2:
+                  return "0;1"
+              eps = 0.0005
+              out = [0.0] * n
+              out[0] = 0.0
+              out[n - 1] = 1.0
+              for i in range(1, n - 1):
+                  raw = max(0.0, min(1.0, float(times[i])))
+                  min_allowed = out[i - 1] + eps
+                  max_allowed = 1.0 - (n - 1 - i) * eps
+                  out[i] = min(max_allowed, max(min_allowed, raw))
+              for i in range(n - 2, 0, -1):
+                  if out[i] >= out[i + 1] - eps * 0.5:
+                      out[i] = max(eps * i, out[i + 1] - eps)
+              return ";".join("0" if i == 0 else ("1" if i == n - 1 else f"{v:.4f}") for i, v in enumerate(out))
+
+
+          def level_from_count(count: int, max_count: int) -> int:
+              if count <= 0:
+                  return 0
+              ratio = count / max(max_count, 1)
+              if ratio <= 0.24:
+                  return 1
+              if ratio <= 0.50:
+                  return 2
+              if ratio <= 0.78:
+                  return 3
+              return 4
+
+
+          def month_labels_from_weeks(week_dates, start_x: float, step_x: float):
+              labels = []
+              last_m = -1
+              for w, ds in enumerate(week_dates):
+                  if not ds or len(ds) < 7:
+                      continue
+                  try:
+                      m = int(ds[5:7]) - 1
+                  except ValueError:
+                      continue
+                  if m != last_m:
+                      x = start_x + w * step_x
+                      if not labels or (x - labels[-1][0]) >= 34.0:
+                          labels.append((x, MONTHS[m % 12]))
+                      last_m = m
+              if len(labels) < 4:
+                  labels = [(start_x + i * (step_x * 51.0 / 11.0), MONTHS[i]) for i in range(12)]
+              return labels
+
+
+          def build_catmull_rom_path(points, top_y: float, horizon_y: float) -> str:
+              cmds = [f"M {points[0][0]:.1f} {points[0][1]:.1f}"]
+              n = len(points)
+              for i in range(n - 1):
+                  p0 = points[max(0, i - 1)]
+                  p1 = points[i]
+                  p2 = points[i + 1]
+                  p3 = points[min(n - 1, i + 2)]
+                  c1x = p1[0] + (p2[0] - p0[0]) / 6.0
+                  c1y = min(horizon_y, max(top_y - 4.0, p1[1] + (p2[1] - p0[1]) / 6.0))
+                  c2x = p2[0] - (p3[0] - p1[0]) / 6.0
+                  c2y = min(horizon_y, max(top_y - 4.0, p2[1] - (p3[1] - p1[1]) / 6.0))
+                  cmds.append(f"C {c1x:.1f} {c1y:.1f}, {c2x:.1f} {c2y:.1f}, {p2[0]:.1f} {p2[1]:.1f}")
+              return " ".join(cmds)
+
+
+          def generate_fallback_data(username: str) -> dict:
+              """Deterministic fallback data if run without a GitHub token."""
+              rng = random.Random(2026)
+              today = datetime.datetime.now(datetime.timezone.utc).date()
+              start = today - datetime.timedelta(weeks=51)
+              grid = []
+              week_dates = []
+              total = 0
+              for w in range(52):
+                  week_dates.append((start + datetime.timedelta(weeks=w)).isoformat())
+                  col = []
+                  wave = math.sin(w / 5.0) * 3.0 + 3.2
+                  for _ in range(7):
+                      p = rng.random()
+                      if p < 0.36:
+                          c = 0
+                      elif p < 0.68:
+                          c = rng.randint(1, 3)
+                      elif p < 0.90:
+                          c = rng.randint(4, int(wave + 5))
+                      else:
+                          c = rng.randint(8, 16)
+                      col.append(c)
+                      total += c
+                  grid.append(col)
+              return {
+                  "username": username,
+                  "total_contributions": total,
+                  "total_commits": int(total * 0.9),
+                  "total_repos": 28,
+                  "total_stars": 64,
+                  "current_streak": 14,
+                  "longest_streak": 38,
+                  "top_langs": [
+                      ("Java", 31.2),
+                      ("Python", 25.4),
+                      ("JavaScript", 21.1),
+                      ("TypeScript", 13.3),
+                      ("C++", 9.0),
+                  ],
+                  "grid": grid,
+                  "week_dates": week_dates,
+              }
+
+
+          def fetch_github_data(username: str, token: str) -> dict:
+              """Fetch live contribution calendar, stats, and language distribution via GitHub GraphQL API."""
+              if not token:
+                  return generate_fallback_data(username)
+
+              query = """
+              query($login: String!) {
+                user(login: $login) {
+                  login
+                  contributionsCollection {
+                    totalCommitContributions
+                    restrictedContributionsCount
+                    contributionCalendar {
+                      totalContributions
+                      weeks {
+                        firstDay
+                        contributionDays {
+                          date
+                          contributionCount
+                          weekday
+                        }
+                      }
+                    }
+                  }
+                  repositories(first: 100, ownerAffiliations: OWNER, isFork: false, orderBy: {field: UPDATED_AT, direction: DESC}) {
+                    totalCount
+                    nodes {
+                      stargazerCount
+                      languages(first: 10, orderBy: {field: SIZE, direction: DESC}) {
+                        edges {
+                          size
+                          node {
+                            name
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              """
+              payload = json.dumps({"query": query, "variables": {"login": username}}).encode("utf-8")
+              req = urllib.request.Request(
+                  "https://api.github.com/graphql",
+                  data=payload,
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Content-Type": "application/json",
+                      "User-Agent": "Dune-Interstellar-Profile-Engine",
+                  },
+                  method="POST",
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=25) as resp:
+                      raw = json.loads(resp.read().decode("utf-8"))
+                  user = raw.get("data", {}).get("user")
+                  if not user:
+                      return generate_fallback_data(username)
+              except Exception as exc:
+                  print(f"[WARN] GraphQL fetch failed ({exc}), using fallback data.")
+                  return generate_fallback_data(username)
+
+              cc = user["contributionsCollection"]
+              cal = cc["contributionCalendar"]
+              weeks_raw = (cal.get("weeks") or [])[-52:]
+              today_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+
+              grid = []
+              week_dates = []
+              flat_days = []
+              for w in weeks_raw:
+                  col = [0] * 7
+                  for d in w.get("contributionDays") or []:
+                      wd = int(d["weekday"])
+                      cnt = int(d["contributionCount"])
+                      if 0 <= wd < 7:
+                          col[wd] = cnt
+                      if d.get("date", "") <= today_str:
+                          flat_days.append(cnt)
+                  grid.append(col)
+                  week_dates.append(w.get("firstDay", ""))
+
+              while len(grid) < 52:
+                  grid.insert(0, [0] * 7)
+                  week_dates.insert(0, "")
+
+              longest_streak = 0
+              curr = 0
+              for cnt in flat_days:
+                  if cnt > 0:
+                      curr += 1
+                      if curr > longest_streak:
+                          longest_streak = curr
+                  else:
+                      curr = 0
+
+              current_streak = 0
+              idx = len(flat_days) - 1
+              if idx >= 0 and flat_days[idx] == 0:
+                  idx -= 1
+              while idx >= 0 and flat_days[idx] > 0:
+                  current_streak += 1
+                  idx -= 1
+
+              repos = user["repositories"]
+              total_stars = sum(int(r.get("stargazerCount", 0)) for r in repos.get("nodes") or [])
+              lang_sizes = {}
+              for r in repos.get("nodes") or []:
+                  for edge in (r.get("languages") or {}).get("edges") or []:
+                      lname = edge["node"]["name"]
+                      lang_sizes[lname] = lang_sizes.get(lname, 0) + int(edge.get("size", 0))
+
+              total_bytes = sum(lang_sizes.values())
+              if total_bytes > 0:
+                  top_langs = sorted(lang_sizes.items(), key=lambda x: x[1], reverse=True)[:5]
+                  top_langs_pct = [(k, round(v * 100.0 / total_bytes, 1)) for k, v in top_langs]
+              else:
+                  top_langs_pct = [
+                      ("Java", 31.2),
+                      ("Python", 25.4),
+                      ("JavaScript", 21.1),
+                      ("TypeScript", 13.3),
+                      ("C++", 9.0),
+                  ]
+
+              total_commits = int(cc["totalCommitContributions"]) + int(cc["restrictedContributionsCount"])
+              if total_commits == 0:
+                  total_commits = int(cal["totalContributions"])
+
+              return {
+                  "username": user["login"],
+                  "total_contributions": int(cal["totalContributions"]),
+                  "total_commits": total_commits,
+                  "total_repos": int(repos["totalCount"]),
+                  "total_stars": total_stars,
+                  "current_streak": current_streak,
+                  "longest_streak": longest_streak,
+                  "top_langs": top_langs_pct,
+                  "grid": grid,
+                  "week_dates": week_dates,
+              }
+
+
+          # ------------------------------------------------------------------
+          # 1. TOP TRANSPARENT HORIZON ACCENT SVG (850 x 56) — ZERO BOX
+          # ------------------------------------------------------------------
+          def build_horizon_accent(theme_name: str) -> str:
+              p = PALETTES[theme_name]
+              if p["is_dark"]:
+                  return """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 56" width="850" height="56">
+            <defs>
+              <linearGradient id="hzDark" x1="0%" y1="50%" x2="100%" y2="50%">
+                <stop offset="0%" stop-color="#7BA7D1" stop-opacity="0"/>
+                <stop offset="18%" stop-color="#7BA7D1" stop-opacity="0.52"/>
+                <stop offset="44%" stop-color="#E29B42" stop-opacity="0.92"/>
+                <stop offset="60%" stop-color="#FFF5DF" stop-opacity="0.98"/>
+                <stop offset="82%" stop-color="#2D527A" stop-opacity="0.52"/>
+                <stop offset="100%" stop-color="#2D527A" stop-opacity="0"/>
+              </linearGradient>
+              <radialGradient id="hzGlow" cx="52%" cy="68%" r="46%">
+                <stop offset="0%" stop-color="#E29B42" stop-opacity="0.24"/>
+                <stop offset="100%" stop-color="#2D527A" stop-opacity="0"/>
+              </radialGradient>
+              <filter id="hzBlur" x="-10%" y="-80%" width="120%" height="260%">
+                <feGaussianBlur stdDeviation="2.8" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <ellipse cx="440" cy="36" rx="340" ry="18" fill="url(#hzGlow)"/>
+            <path d="M 14 46 Q 425 4 836 46" fill="none" stroke="url(#hzDark)" stroke-width="1.55" stroke-linecap="round" filter="url(#hzBlur)"/>
+            <path d="M 110 49 Q 425 18 740 49" fill="none" stroke="#2D527A" stroke-width="0.6" opacity="0.34"/>
+            <circle r="2.2" fill="#FFF5DF" filter="url(#hzBlur)">
+              <animateMotion dur="14s" repeatCount="indefinite" path="M 14 46 Q 425 4 836 46"/>
+              <animate attributeName="opacity" values="0;0.96;0.96;0" keyTimes="0;0.14;0.86;1" dur="14s" repeatCount="indefinite"/>
+            </circle>
+          </svg>"""
+
+              # Light Mode: Dune Arrakis sculpted sunlit dune crest + drifting spice ember
+              return """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 56" width="850" height="56">
+            <defs>
+              <linearGradient id="hzDuneMain" x1="0%" y1="50%" x2="100%" y2="50%">
+                <stop offset="0%" stop-color="#E8CFAF" stop-opacity="0"/>
+                <stop offset="16%" stop-color="#DC9D5E" stop-opacity="0.82"/>
+                <stop offset="46%" stop-color="#C85A17" stop-opacity="0.96"/>
+                <stop offset="72%" stop-color="#E07A2F" stop-opacity="0.84"/>
+                <stop offset="88%" stop-color="#DC9D5E" stop-opacity="0.36"/>
+                <stop offset="100%" stop-color="#E8CFAF" stop-opacity="0"/>
+              </linearGradient>
+              <linearGradient id="hzDuneEcho" x1="0%" y1="50%" x2="100%" y2="50%">
+                <stop offset="0%" stop-color="#E8CFAF" stop-opacity="0"/>
+                <stop offset="28%" stop-color="#DC9D5E" stop-opacity="0.44"/>
+                <stop offset="68%" stop-color="#8A370A" stop-opacity="0.28"/>
+                <stop offset="100%" stop-color="#8A370A" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path d="M 12 45 Q 240 12 454 29 T 838 40" fill="none" stroke="url(#hzDuneMain)" stroke-width="1.6" stroke-linecap="round"/>
+            <path d="M 86 49 Q 320 24 548 37 T 792 47" fill="none" stroke="url(#hzDuneEcho)" stroke-width="0.8" stroke-linecap="round"/>
+            <g>
+              <animateMotion dur="15s" repeatCount="indefinite" path="M 12 45 Q 240 12 454 29 T 838 40"/>
+              <animate attributeName="opacity" values="0;0.96;0.96;0" keyTimes="0;0.14;0.86;1" dur="15s" repeatCount="indefinite"/>
+              <circle cx="0" cy="0" r="4.6" fill="#E07A2F" opacity="0.22"/>
+              <circle cx="0" cy="0" r="2.2" fill="#C85A17"/>
+              <circle cx="0" cy="0" r="0.9" fill="#FFF7ED"/>
+            </g>
+          </svg>"""
+
+
+          # ------------------------------------------------------------------
+          # 2. OVERVIEW — 100% TRANSPARENT STATS STRIP SVG (850 x 124)
+          # ------------------------------------------------------------------
+          def build_stats_strip(data: dict, theme_name: str) -> str:
+              p = PALETTES[theme_name]
+              metrics = [
+                  ("COMMITS", f"{data['total_commits']:,}"),
+                  ("CONTRIBUTIONS", f"{data['total_contributions']:,}"),
+                  ("CURRENT STREAK", f"{data['current_streak']}d"),
+                  ("LONGEST STREAK", f"{data['longest_streak']}d"),
+                  ("REPOSITORIES", f"{data['total_repos']:,}"),
+                  ("STARS", f"{data['total_stars']:,}"),
+              ]
+
+              col_w = 830.0 / len(metrics)
+              metric_els = []
+              for idx, (label, val) in enumerate(metrics):
+                  x = 10.0 + idx * col_w
+                  if idx > 0:
+                      metric_els.append(
+                          f'<line x1="{x - 10:.1f}" y1="14" x2="{x - 10:.1f}" y2="54" stroke="{p["hairline"]}" stroke-width="0.8" opacity="0.85"/>'
+                      )
+                  metric_els.append(
+                      f'<text x="{x:.1f}" y="22" font-family="{FONT_MONO}" font-size="9" fill="{p["muted"]}" letter-spacing="1.15">{escape(label)}</text>'
+                      f'<text x="{x:.1f}" y="48" font-family="{FONT_SANS}" font-size="22" font-weight="600" fill="{p["text"]}">{escape(val)}</text>'
+                  )
+
+              # Strict Accent Rule: ONLY Java, Python, JavaScript OR any language >= 20.0%
+              acc_idx = 0
+              neu_idx = 0
+              bar_x = 10.0
+              bar_w = 830.0
+              stacked = []
+              legend = []
+              langs = data["top_langs"][:5]
+              total_pct = sum(pct for _, pct in langs) or 100.0
+              leg_step = 830.0 / max(len(langs), 1)
+
+              for i, (lname, pct) in enumerate(langs):
+                  is_highlight = (lname.strip().lower() in CORE_ACCENT_LANGS) or (pct >= 20.0)
+                  if is_highlight:
+                      col = p["accent_bars"][acc_idx % len(p["accent_bars"])]
+                      acc_idx += 1
+                      lbl_col = p["text"]
+                      pct_col = p["accent"]
+                  else:
+                      col = p["neutral_bars"][neu_idx % len(p["neutral_bars"])]
+                      neu_idx += 1
+                      lbl_col = p["muted"]
+                      pct_col = p["subtle"]
+
+                  seg_w = max(5.0, bar_w * (pct / total_pct))
+                  if bar_x + seg_w > 10.0 + bar_w:
+                      seg_w = max(0.0, 10.0 + bar_w - bar_x)
+                  stacked.append(f'<rect x="{bar_x:.1f}" y="82" width="{seg_w:.1f}" height="6.5" fill="{col}"/>')
+                  bar_x += seg_w
+
+                  lx = 10.0 + i * leg_step
+                  legend.append(
+                      f'<circle cx="{lx + 4:.1f}" cy="107" r="3.2" fill="{col}"/>'
+                      f'<text x="{lx + 14:.1f}" y="110.5" font-family="{FONT_SANS}" font-size="11.5" font-weight="500" fill="{lbl_col}">{escape(lname[:14])} '
+                      f'<tspan font-family="{FONT_MONO}" font-size="10.5" fill="{pct_col}">{pct:.1f}%</tspan></text>'
+                  )
+
+              return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 124" width="850" height="124">
+            <defs>
+              <clipPath id="ovClip-{theme_name}">
+                <rect x="10" y="82" width="830" height="6.5" rx="3.25"/>
+              </clipPath>
+            </defs>
+            {"".join(metric_els)}
+            <line x1="10" y1="68" x2="840" y2="68" stroke="{p['hairline']}" stroke-width="0.75" opacity="0.75"/>
+            <rect x="10" y="82" width="830" height="6.5" rx="3.25" fill="{p['track']}"/>
+            <g clip-path="url(#ovClip-{theme_name})">{"".join(stacked)}</g>
+            {"".join(legend)}
+          </svg>"""
+
+
+          # ------------------------------------------------------------------
+          # 3. ACTIVITY 01 — SWEEP (850 x 206, 20s PURE SMIL, TRANSPARENT)
+          #    Light: Dune SHAI-HULUD SWEEP | Dark: Interstellar EVENT HORIZON
+          # ------------------------------------------------------------------
+          def build_activity_sweep(data: dict, subtitle: str, theme_name: str) -> str:
+              p = PALETTES[theme_name]
+              grid = data["grid"]
+              max_c = max((c for col in grid for c in col), default=1) or 1
+
+              start_x, start_y = 54.0, 42.0
+              step_x, step_y = 14.9, 19.2
+              center_y = start_y + 3.0 * step_y
+              cycle = 20.0
+              sweep_start_x, sweep_end_x = 12.0, 842.0
+              sweep_dur = 15.6
+
+              m_labels = month_labels_from_weeks(data["week_dates"], start_x, step_x)
+              month_svg = "".join(
+                  f'<text x="{mx:.1f}" y="22" font-family="{FONT_MONO}" font-size="9" fill="{p["muted"]}" letter-spacing="0.8">{ml}</text>'
+                  for mx, ml in m_labels
+              )
+              day_svg = (
+                  f'<text x="36" y="{start_y + 1*step_y + 3:.1f}" text-anchor="end" font-family="{FONT_MONO}" font-size="8.5" fill="{p["subtle"]}">MON</text>'
+                  f'<text x="36" y="{start_y + 3*step_y + 3:.1f}" text-anchor="end" font-family="{FONT_MONO}" font-size="8.5" fill="{p["subtle"]}">WED</text>'
+                  f'<text x="36" y="{start_y + 5*step_y + 3:.1f}" text-anchor="end" font-family="{FONT_MONO}" font-size="8.5" fill="{p["subtle"]}">FRI</text>'
+              )
+
+              radii = [2.1, 3.3, 4.1, 4.9, 5.6]
+              dots_svg = []
+
+              for w in range(52):
+                  cx = start_x + w * step_x
+                  frac = (cx - sweep_start_x) / (sweep_end_x - sweep_start_x)
+                  t_hit = max(0.65, min(sweep_dur - 0.25, frac * sweep_dur))
+                  t_pull = max(0.05, t_hit - 0.85)
+                  kt = format_strict_key_times([0.0, t_pull / cycle, t_hit / cycle, 17.6 / cycle, 19.2 / cycle, 1.0])
+
+                  for d in range(7):
+                      cy = start_y + d * step_y
+                      lv = level_from_count(grid[w][d], max_c)
+                      if lv == 0:
+                          dots_svg.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="2.1" fill="{p["empty"]}" opacity="0.92"/>')
+                      else:
+                          r = radii[lv]
+                          col = p["levels"][lv]
+                          pull_x = cx + 5.8
+                          pull_y = cy + (center_y - cy) * 0.72
+                          dots_svg.append(
+                              f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}" fill="{col}">'
+                              f'<animate attributeName="cx" values="{cx:.1f};{cx:.1f};{pull_x:.1f};{cx:.1f};{cx:.1f};{cx:.1f}" keyTimes="{kt}" dur="{cycle:.1f}s" repeatCount="indefinite"/>'
+                              f'<animate attributeName="cy" values="{cy:.1f};{cy:.1f};{pull_y:.1f};{cy:.1f};{cy:.1f};{cy:.1f}" keyTimes="{kt}" dur="{cycle:.1f}s" repeatCount="indefinite"/>'
+                              f'<animate attributeName="r" values="{r:.1f};{r*1.18:.1f};0;0;{r:.1f};{r:.1f}" keyTimes="{kt}" dur="{cycle:.1f}s" repeatCount="indefinite"/>'
+                              f'<animate attributeName="opacity" values="0.98;1;0;0;0.98;0.98" keyTimes="{kt}" dur="{cycle:.1f}s" repeatCount="indefinite"/>'
+                              f'</circle>'
+                          )
+
+              sw_kt = format_strict_key_times([0.0, sweep_dur / cycle, 16.6 / cycle, 17.4 / cycle, 1.0])
+              sw_tx = f"{sweep_start_x:.1f} {center_y:.1f};{sweep_end_x:.1f} {center_y:.1f};{sweep_end_x+52:.1f} {center_y:.1f};{sweep_start_x-52:.1f} {center_y:.1f};{sweep_start_x:.1f} {center_y:.1f}"
+              sw_op_kt = format_strict_key_times([0.0, 0.03, (sweep_dur - 0.4) / cycle, 16.4 / cycle, 17.5 / cycle, 0.97, 1.0])
+
+              if p["is_dark"]:
+                  sweeper_defs = """
+              <radialGradient id="bhAura-dark" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#FFF5DF" stop-opacity="0.86"/>
+                <stop offset="36%" stop-color="#E29B42" stop-opacity="0.48"/>
+                <stop offset="72%" stop-color="#7A3E14" stop-opacity="0.12"/>
+                <stop offset="100%" stop-color="#7A3E14" stop-opacity="0"/>
+              </radialGradient>
+              <linearGradient id="bhDisk-dark" x1="0%" y1="50%" x2="100%" y2="50%">
+                <stop offset="0%" stop-color="#7A3E14" stop-opacity="0"/>
+                <stop offset="24%" stop-color="#FFF5DF" stop-opacity="0.96"/>
+                <stop offset="56%" stop-color="#E29B42" stop-opacity="0.88"/>
+                <stop offset="100%" stop-color="#7A3E14" stop-opacity="0"/>
+              </linearGradient>
+              <filter id="bhGlow-dark" x="-60%" y="-60%" width="220%" height="220%">
+                <feGaussianBlur stdDeviation="3.0" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>"""
+                  sweeper_art = """
+                <circle cx="0" cy="0" r="34" fill="url(#bhAura-dark)"/>
+                <g transform="rotate(-14)">
+                  <ellipse cx="0" cy="0" rx="33" ry="8" fill="none" stroke="url(#bhDisk-dark)" stroke-width="3.8" filter="url(#bhGlow-dark)"/>
+                  <path d="M -20 0 A 20 18 0 0 1 20 0" fill="none" stroke="#E29B42" stroke-width="2.2" opacity="0.85" filter="url(#bhGlow-dark)"/>
+                  <path d="M -18 0 A 18 15 0 0 0 18 0" fill="none" stroke="#7A3E14" stroke-width="1.6" opacity="0.62"/>
+                  <circle cx="0" cy="0" r="13" fill="#04060A"/>
+                  <circle cx="0" cy="0" r="13.7" fill="none" stroke="#FFF5DF" stroke-width="1.0"/>
+                  <path d="M -32 0.5 Q 0 8.5 32 0.5" fill="none" stroke="#FFF5DF" stroke-width="1.45" opacity="0.96"/>
+                </g>"""
+              else:
+                  # Light Mode: Dune Shai-Hulud Sandworm Maw / Desert Vortex (crisp, zero muddy blur)
+                  teeth = []
+                  for i in range(16):
+                      ang = math.radians(i * 22.5)
+                      x1, y1 = math.cos(ang) * 9.5, math.sin(ang) * 9.5
+                      x2, y2 = math.cos(ang) * 14.5, math.sin(ang) * 14.5
+                      col = "#E8CFAF" if i % 2 == 0 else "#C85A17"
+                      teeth.append(
+                          f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{col}" stroke-width="1.2" stroke-linecap="round"/>'
+                      )
+                  sweeper_defs = ""
+                  sweeper_art = f"""
+                <g>
+                  <animateTransform attributeName="transform" type="rotate" from="360 0 0" to="0 0 0" dur="8.5s" repeatCount="indefinite"/>
+                  <circle cx="0" cy="0" r="24.5" fill="none" stroke="#DC9D5E" stroke-width="1.2" stroke-dasharray="24 14 10 18" stroke-linecap="round" opacity="0.82"/>
+                  <circle cx="0" cy="0" r="20.8" fill="none" stroke="#C85A17" stroke-width="1.6" stroke-dasharray="32 16 14 14" stroke-linecap="round" opacity="0.92"/>
+                </g>
+                <g>
+                  <animateTransform attributeName="transform" type="rotate" from="0 0 0" to="360 0 0" dur="5.6s" repeatCount="indefinite"/>
+                  <circle cx="0" cy="0" r="17.2" fill="none" stroke="#E07A2F" stroke-width="1.45" stroke-dasharray="18 8 12 8" stroke-linecap="round"/>
+                  <circle cx="0" cy="0" r="14.4" fill="none" stroke="#1C1917" stroke-width="1.05" opacity="0.86"/>
+                  {"".join(teeth)}
+                </g>
+                <circle cx="0" cy="0" r="10.0" fill="#1C1917"/>
+                <circle cx="0" cy="0" r="10.6" fill="none" stroke="#F3EDE5" stroke-width="0.95"/>
+                <circle cx="0" cy="0" r="5.0" fill="#0C0907"/>"""
+
+              return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 206" width="850" height="206">
+            <defs>{sweeper_defs}
+              <clipPath id="s01Clip-{theme_name}">
+                <rect x="0" y="0" width="850" height="206"/>
+              </clipPath>
+            </defs>
+
+            <g clip-path="url(#s01Clip-{theme_name})">
+              {month_svg}
+              {day_svg}
+              <line x1="48" y1="{center_y:.1f}" x2="824" y2="{center_y:.1f}" stroke="{p['accent']}" stroke-width="0.6" stroke-dasharray="3 6" opacity="0.28"/>
+
+              {"".join(dots_svg)}
+
+              <g>
+                <animateTransform attributeName="transform" type="translate" values="{sw_tx}" keyTimes="{sw_kt}" dur="{cycle:.1f}s" repeatCount="indefinite"/>
+                <animate attributeName="opacity" values="0;1;1;0;0;0;0" keyTimes="{sw_op_kt}" dur="{cycle:.1f}s" repeatCount="indefinite"/>
+                {sweeper_art}
+              </g>
+
+              <text x="54" y="196" font-family="{FONT_MONO}" font-size="9" fill="{p['subtle']}" letter-spacing="0.6">{escape(subtitle)}</text>
+              <g transform="translate(698, 187)">
+                <text x="-30" y="9" font-family="{FONT_MONO}" font-size="8.5" fill="{p['subtle']}">LESS</text>
+                <circle cx="4" cy="5.5" r="2.8" fill="{p['levels'][0]}"/>
+                <circle cx="17" cy="5.5" r="3.2" fill="{p['levels'][1]}"/>
+                <circle cx="30" cy="5.5" r="3.6" fill="{p['levels'][2]}"/>
+                <circle cx="43" cy="5.5" r="4.0" fill="{p['levels'][3]}"/>
+                <circle cx="56" cy="5.5" r="4.4" fill="{p['levels'][4]}"/>
+                <text x="68" y="9" font-family="{FONT_MONO}" font-size="8.5" fill="{p['subtle']}">MORE</text>
+              </g>
+            </g>
+          </svg>"""
+
+
+          # ------------------------------------------------------------------
+          # 4. ACTIVITY 02 — WAVE (850 x 206, 24 SPARKS / METEORS, TRANSPARENT)
+          #    Light: Dune ARRAKIS RIDGE | Dark: Interstellar MILLER'S WAVE
+          # ------------------------------------------------------------------
+          def build_activity_wave(data: dict, subtitle: str, theme_name: str) -> str:
+              p = PALETTES[theme_name]
+              is_dark = p["is_dark"]
+              grid = data["grid"]
+              weekly = [sum(col) for col in grid]
+              max_w = max(1, max(weekly) if weekly else 1)
+
+              start_x, end_x = 46.0, 826.0
+              step_x = (end_x - start_x) / 51.0
+              horizon_y, top_y = 148.0, 32.0
+              wave_h = horizon_y - top_y
+
+              pts = [(start_x + w * step_x, horizon_y - (val / max_w) * wave_h, val, w) for w, val in enumerate(weekly)]
+              crest_d = build_catmull_rom_path(pts, top_y, horizon_y)
+              area_d = f"{crest_d} L {end_x:.1f} {horizon_y:.1f} L {start_x:.1f} {horizon_y:.1f} Z"
+
+              refl_pts = [(x, horizon_y + (horizon_y - y) * 0.24) for x, y, _, _ in pts]
+              refl_d = build_catmull_rom_path(refl_pts, horizon_y, horizon_y + 34.0)
+              refl_area_d = f"{refl_d} L {end_x:.1f} {horizon_y:.1f} L {start_x:.1f} {horizon_y:.1f} Z"
+
+              ranked = sorted(pts, key=lambda item: item[2], reverse=True)
+              peaks = []
+              for cand in ranked:
+                  if cand[2] <= 0:
+                      break
+                  if all(abs(cand[3] - pk[3]) >= 7 for pk in peaks):
+                      peaks.append(cand)
+                  if len(peaks) == 2:
+                      break
+
+              if is_dark:
+                  w_stroke_0, w_stroke_50, w_stroke_100 = "#7BA7D1", "#FFF5DF", "#E29B42"
+                  w_fill_top, w_fill_top_op = "#E29B42", "0.36"
+                  w_fill_mid, w_fill_mid_op = "#2D527A", "0.22"
+                  w_horizon, w_refl, w_refl_op = "#2D527A", "#2D527A", "0.24"
+                  peak_dot, peak_halo, peak_text = "#FFF5DF", "#E29B42", "#E6EDF3"
+                  sky_grads = """
+              <linearGradient id="skGold-dark" x1="0%" y1="100%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#FFF9EB" stop-opacity="1"/>
+                <stop offset="38%" stop-color="#E29B42" stop-opacity="0.72"/>
+                <stop offset="100%" stop-color="#E29B42" stop-opacity="0"/>
+              </linearGradient>
+              <linearGradient id="skIce-dark" x1="0%" y1="100%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#E6F1FF" stop-opacity="0.95"/>
+                <stop offset="42%" stop-color="#7BA7D1" stop-opacity="0.60"/>
+                <stop offset="100%" stop-color="#7BA7D1" stop-opacity="0"/>
+              </linearGradient>"""
+              else:
+                  w_stroke_0, w_stroke_50, w_stroke_100 = "#DC9D5E", "#C85A17", "#2B1B12"
+                  w_fill_top, w_fill_top_op = "#C85A17", "0.26"
+                  w_fill_mid, w_fill_mid_op = "#E8CFAF", "0.14"
+                  w_horizon, w_refl, w_refl_op = "#C85A17", "#DC9D5E", "0.22"
+                  peak_dot, peak_halo, peak_text = "#2B1B12", "#E07A2F", "#1C1917"
+                  sky_grads = """
+              <linearGradient id="spSpice-light" x1="0%" y1="100%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#C85A17" stop-opacity="1"/>
+                <stop offset="42%" stop-color="#E07A2F" stop-opacity="0.68"/>
+                <stop offset="100%" stop-color="#E8CFAF" stop-opacity="0"/>
+              </linearGradient>
+              <linearGradient id="spCopper-light" x1="0%" y1="100%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#E07A2F" stop-opacity="0.98"/>
+                <stop offset="42%" stop-color="#DC9D5E" stop-opacity="0.66"/>
+                <stop offset="100%" stop-color="#F3EDE5" stop-opacity="0"/>
+              </linearGradient>
+              <linearGradient id="spUmber-light" x1="0%" y1="100%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#7A3B16" stop-opacity="0.92"/>
+                <stop offset="42%" stop-color="#C85A17" stop-opacity="0.56"/>
+                <stop offset="100%" stop-color="#E8CFAF" stop-opacity="0"/>
+              </linearGradient>"""
+
+              peak_svg = []
+              for px, py, pval, _ in peaks:
+                  lbl_y = max(15.0, py - 10.0)
+                  peak_svg.append(
+                      f'<line x1="{px:.1f}" y1="{py:.1f}" x2="{px:.1f}" y2="{horizon_y:.1f}" stroke="{peak_halo}" stroke-width="0.75" stroke-dasharray="2 3" opacity="0.52"/>'
+                      f'<circle cx="{px:.1f}" cy="{py:.1f}" r="5.2" fill="{peak_halo}" opacity="0.28"/>'
+                      f'<circle cx="{px:.1f}" cy="{py:.1f}" r="2.6" fill="{peak_dot}"/>'
+                      f'<text x="{px:.1f}" y="{lbl_y:.1f}" text-anchor="middle" font-family="{FONT_MONO}" font-size="8.8" font-weight="600" fill="{peak_text}">{pval}/wk</text>'
+                  )
+
+              # 24 Diagonal Spice Sparks (Light Dune) / 24 Shooting Stars (Dark Interstellar)
+              rng = random.Random(2026)
+              sparks = []
+              for i in range(24):
+                  sx = rng.uniform(95.0, 845.0)
+                  sy = rng.uniform(4.0, 86.0)
+                  length = rng.uniform(42.0, 118.0)
+                  rad = math.radians(rng.uniform(19.0, 33.0))
+                  travel = rng.uniform(165.0, 330.0)
+                  tx, ty = -travel * math.cos(rad), travel * math.sin(rad)
+                  tail_x, tail_y = length * math.cos(rad), -length * math.sin(rad)
+                  dur = rng.uniform(3.1, 8.0)
+                  sf = rng.uniform(0.11, 0.22)
+                  delay = rng.uniform(0.0, dur)
+
+                  if is_dark:
+                      is_gold = (i % 3 != 0)
+                      grad_id = "skGold-dark" if is_gold else "skIce-dark"
+                      head_col = "#FFF9EB" if is_gold else "#E6F1FF"
+                      sw, hr = (1.25, 1.45) if is_gold else (0.95, 1.15)
+                  else:
+                      pick = i % 3
+                      if pick == 0:
+                          grad_id, head_col, sw, hr = "spSpice-light", "#C85A17", 1.30, 1.50
+                      elif pick == 1:
+                          grad_id, head_col, sw, hr = "spCopper-light", "#E07A2F", 1.15, 1.35
+                      else:
+                          grad_id, head_col, sw, hr = "spUmber-light", "#7A3B16", 1.05, 1.25
+
+                  kt = format_strict_key_times([0.0, sf * 0.18, sf * 0.72, sf, 1.0])
+                  mkt = format_strict_key_times([0.0, sf, 1.0])
+                  sparks.append(
+                      f'<g opacity="0">'
+                      f'<animate attributeName="opacity" values="0;0.96;0.84;0;0" keyTimes="{kt}" dur="{dur:.2f}s" begin="{delay:.2f}s" repeatCount="indefinite"/>'
+                      f'<animateTransform attributeName="transform" type="translate" values="0 0;{tx:.1f} {ty:.1f};{tx:.1f} {ty:.1f}" keyTimes="{mkt}" dur="{dur:.2f}s" begin="{delay:.2f}s" repeatCount="indefinite"/>'
+                      f'<line x1="{sx:.1f}" y1="{sy:.1f}" x2="{sx + tail_x:.1f}" y2="{sy + tail_y:.1f}" stroke="url(#{grad_id})" stroke-width="{sw:.2f}" stroke-linecap="round"/>'
+                      f'<circle cx="{sx:.1f}" cy="{sy:.1f}" r="{hr:.2f}" fill="{head_col}"/>'
+                      f'</g>'
+                  )
+
+              m_labels = month_labels_from_weeks(data["week_dates"], start_x, step_x)
+              month_svg = "".join(
+                  f'<text x="{mx:.1f}" y="178" font-family="{FONT_MONO}" font-size="8.6" fill="{p["muted"]}" letter-spacing="0.8">{ml}</text>'
+                  for mx, ml in m_labels
+              )
+              mid_val = int(round(max_w / 2.0))
+              avg_wk = sum(weekly) / 52.0
+
+              return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 206" width="850" height="206">
+            <defs>
+              <linearGradient id="wFill-{theme_name}" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="{w_fill_top}" stop-opacity="{w_fill_top_op}"/>
+                <stop offset="52%" stop-color="{w_fill_mid}" stop-opacity="{w_fill_mid_op}"/>
+                <stop offset="100%" stop-color="{w_fill_mid}" stop-opacity="0"/>
+              </linearGradient>
+              <linearGradient id="wStroke-{theme_name}" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="{w_stroke_0}"/>
+                <stop offset="50%" stop-color="{w_stroke_50}"/>
+                <stop offset="100%" stop-color="{w_stroke_100}"/>
+              </linearGradient>
+              <linearGradient id="wRefl-{theme_name}" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="{w_refl}" stop-opacity="{w_refl_op}"/>
+                <stop offset="100%" stop-color="{w_refl}" stop-opacity="0"/>
+              </linearGradient>{sky_grads}
+              <clipPath id="wSky-{theme_name}">
+                <rect x="38" y="0" width="808" height="148"/>
+              </clipPath>
+            </defs>
+
+            <g clip-path="url(#wSky-{theme_name})">
+              {"".join(sparks)}
+            </g>
+
+            <line x1="{start_x:.1f}" y1="{top_y:.1f}" x2="{end_x:.1f}" y2="{top_y:.1f}" stroke="{p['hairline']}" stroke-width="0.65" stroke-dasharray="3 5" opacity="0.7"/>
+            <line x1="{start_x:.1f}" y1="{(top_y + horizon_y)/2:.1f}" x2="{end_x:.1f}" y2="{(top_y + horizon_y)/2:.1f}" stroke="{p['hairline']}" stroke-width="0.65" stroke-dasharray="3 5" opacity="0.7"/>
+            <text x="36" y="{top_y + 3:.1f}" text-anchor="end" font-family="{FONT_MONO}" font-size="8.5" fill="{p['subtle']}">{max_w}</text>
+            <text x="36" y="{(top_y + horizon_y)/2 + 3:.1f}" text-anchor="end" font-family="{FONT_MONO}" font-size="8.5" fill="{p['subtle']}">{mid_val}</text>
+            <text x="36" y="{horizon_y + 3:.1f}" text-anchor="end" font-family="{FONT_MONO}" font-size="8.5" fill="{p['subtle']}">0</text>
+
+            <path d="{refl_area_d}" fill="url(#wRefl-{theme_name})"/>
+            <line x1="{start_x:.1f}" y1="{horizon_y:.1f}" x2="{end_x:.1f}" y2="{horizon_y:.1f}" stroke="{w_horizon}" stroke-width="0.85" opacity="0.52"/>
+            <path d="{area_d}" fill="url(#wFill-{theme_name})"/>
+            <path d="{crest_d}" fill="none" stroke="url(#wStroke-{theme_name})" stroke-width="1.85" stroke-linecap="round"/>
+
+            {"".join(peak_svg)}
+            {month_svg}
+
+            <text x="46" y="198" font-family="{FONT_MONO}" font-size="9" fill="{p['subtle']}" letter-spacing="0.6">{escape(subtitle)}</text>
+            <text x="826" y="198" text-anchor="end" font-family="{FONT_MONO}" font-size="9" fill="{p['subtle']}" letter-spacing="0.6">PEAK {max_w}/WK · AVG {avg_wk:.1f}/WK</text>
+          </svg>"""
+
+
+          # ------------------------------------------------------------------
+          # 5. ACTIVITY 03 — TRANSIT (850 x 206, 34 RANDOM JUMPS / 24s SMIL)
+          #    Light: Dune ORNITHOPTER TRANSIT | Dark: Interstellar RANGER WARP
+          # ------------------------------------------------------------------
+          def build_activity_transit(data: dict, subtitle: str, theme_name: str, daily_seed: int) -> str:
+              p = PALETTES[theme_name]
+              is_dark = p["is_dark"]
+              grid = data["grid"]
+              max_c = max((c for col in grid for c in col), default=1) or 1
+
+              start_x, start_y = 54.0, 42.0
+              step_x, step_y = 14.9, 19.2
+              radii = [1.5, 2.6, 3.3, 4.1, 4.8]
+
+              lit_cells = []
+              dim_svg = []
+              for w in range(52):
+                  for d in range(7):
+                      lv = level_from_count(grid[w][d], max_c)
+                      cx = start_x + w * step_x
+                      cy = start_y + d * step_y
+                      if lv == 0:
+                          dim_svg.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="1.5" fill="{p["empty"]}" opacity="0.90"/>')
+                      else:
+                          lit_cells.append((w, d, cx, cy, lv, p["levels"][lv], radii[lv]))
+
+              if not lit_cells:
+                  lit_cells = [(26, 3, start_x + 26 * step_x, start_y + 3 * step_y, 3, p["levels"][3], 4.1)]
+
+              rng = random.Random(data["total_contributions"] + daily_seed)
+              n_jumps = min(34, len(lit_cells))
+              pool = list(lit_cells)
+              rng.shuffle(pool)
+              waypoints = [pool.pop(0)]
+
+              # 34 multi-range random jumps: long cross-year leaps, short hops, vertical jumps, pure random
+              for step_idx in range(1, n_jumps):
+                  px, py = waypoints[-1][2], waypoints[-1][3]
+                  mode_pick = step_idx % 4
+                  if mode_pick == 0:
+                      target = max(pool, key=lambda c: math.hypot(c[2] - px, c[3] - py) + rng.uniform(-60.0, 60.0))
+                  elif mode_pick == 1:
+                      target = min(pool, key=lambda c: abs(math.hypot(c[2] - px, c[3] - py) - 55.0) + rng.uniform(0.0, 35.0))
+                  elif mode_pick == 2:
+                      target = max(pool, key=lambda c: abs(c[3] - py) * 2.3 + rng.uniform(-40.0, 40.0))
+                  else:
+                      target = rng.choice(pool)
+                  pool.remove(target)
+                  waypoints.append(target)
+
+              cycle = 24.0
+              tour_end = 21.0
+              step_dt = tour_end / max(len(waypoints), 1)
+
+              wp_times = {(wp[0], wp[1]): idx * step_dt + step_dt * 0.28 for idx, wp in enumerate(waypoints)}
+              cell_eat_time = {}
+              for cell in lit_cells:
+                  key = (cell[0], cell[1])
+                  if key in wp_times:
+                      cell_eat_time[key] = wp_times[key]
+                  else:
+                      best_idx = min(
+                          range(len(waypoints)),
+                          key=lambda i: math.hypot(cell[2] - waypoints[i][2], cell[3] - waypoints[i][3]),
+                      )
+                      cell_eat_time[key] = min(tour_end - 0.1, best_idx * step_dt + step_dt * 0.42)
+
+              t_re0 = 22.0 / cycle
+              t_re1 = 23.5 / cycle
+              lit_svg = []
+              for w, d, cx, cy, lv, col, r in lit_cells:
+                  t_eat = cell_eat_time[(w, d)]
+                  k_pre = max(0.002, (t_eat - 0.16) / cycle)
+                  k_flash = min(t_re0 - 0.015, t_eat / cycle)
+                  k_dark = min(t_re0 - 0.005, (t_eat + 0.22) / cycle)
+                  kt = format_strict_key_times([0.0, k_pre, k_flash, k_dark, t_re0, t_re1, 1.0])
+                  lit_svg.append(
+                      f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}" fill="{col}">'
+                      f'<animate attributeName="opacity" values="0.96;0.96;1;0.08;0.08;0.96;0.96" keyTimes="{kt}" dur="{cycle:.1f}s" repeatCount="indefinite"/>'
+                      f'<animate attributeName="r" values="{r:.1f};{r:.1f};{r*1.52:.1f};1.3;1.3;{r:.1f};{r:.1f}" keyTimes="{kt}" dur="{cycle:.1f}s" repeatCount="indefinite"/>'
+                      f'</circle>'
+                  )
+
+              warp_beams = []
+              shockwaves = []
+              ship_vals = []
+              ship_kts = []
+              rot_vals = []
+              rot_kts = []
+
+              for idx, wp in enumerate(waypoints):
+                  wx, wy = wp[2], wp[3]
+                  t_arr = idx * step_dt + step_dt * 0.28
+                  t_hold = min(tour_end, (idx + 1) * step_dt)
+
+                  if idx == 0:
+                      ship_vals.extend([f"{wx:.1f} {wy:.1f}", f"{wx:.1f} {wy:.1f}"])
+                      ship_kts.extend([0.0, t_hold / cycle])
+                      ang0 = 0.0
+                      if len(waypoints) > 1:
+                          ang0 = math.degrees(math.atan2(waypoints[1][3] - wy, waypoints[1][2] - wx))
+                      rot_vals.extend([f"{ang0:.1f}", f"{ang0:.1f}"])
+                      rot_kts.extend([0.0, t_hold / cycle])
+                  else:
+                      px, py = waypoints[idx - 1][2], waypoints[idx - 1][3]
+                      t_dep = idx * step_dt
+                      ang = math.degrees(math.atan2(wy - py, wx - px))
+                      ship_vals.extend([f"{wx:.1f} {wy:.1f}", f"{wx:.1f} {wy:.1f}"])
+                      ship_kts.extend([t_arr / cycle, t_hold / cycle])
+                      rot_vals.extend([f"{ang:.1f}", f"{ang:.1f}"])
+                      rot_kts.extend([min(t_dep + 0.02, t_arr) / cycle, t_hold / cycle])
+
+                      b_kt = format_strict_key_times([
+                          0.0,
+                          max(0.002, t_dep / cycle),
+                          min(0.97, (t_dep + 0.07) / cycle),
+                          min(0.985, (t_arr + 0.28) / cycle),
+                          1.0,
+                      ])
+                      if is_dark:
+                          warp_beams.append(
+                              f'<line x1="{px:.1f}" y1="{py:.1f}" x2="{wx:.1f}" y2="{wy:.1f}" stroke="#FFF1CC" stroke-width="1.55" stroke-linecap="round" opacity="0">'
+                              f'<animate attributeName="opacity" values="0;0;0.92;0;0" keyTimes="{b_kt}" dur="{cycle:.1f}s" repeatCount="indefinite"/>'
+                              f'</line>'
+                          )
+                      else:
+                          warp_beams.append(
+                              f'<g opacity="0">'
+                              f'<animate attributeName="opacity" values="0;0;0.90;0;0" keyTimes="{b_kt}" dur="{cycle:.1f}s" repeatCount="indefinite"/>'
+                              f'<line x1="{px:.1f}" y1="{py:.1f}" x2="{wx:.1f}" y2="{wy:.1f}" stroke="#DC9D5E" stroke-width="2.6" stroke-linecap="round" opacity="0.34"/>'
+                              f'<line x1="{px:.1f}" y1="{py:.1f}" x2="{wx:.1f}" y2="{wy:.1f}" stroke="#C85A17" stroke-width="1.4" stroke-linecap="round"/>'
+                              f'</g>'
+                          )
+
+                  s_kt = format_strict_key_times([0.0, max(0.002, t_arr / cycle), min(0.985, (t_arr + 0.36) / cycle), 1.0])
+                  if is_dark:
+                      shockwaves.append(
+                          f'<circle cx="{wx:.1f}" cy="{wy:.1f}" r="2" fill="none" stroke="#E29B42" stroke-width="1.2" opacity="0">'
+                          f'<animate attributeName="r" values="2;2;15;2" keyTimes="{s_kt}" dur="{cycle:.1f}s" repeatCount="indefinite"/>'
+                          f'<animate attributeName="opacity" values="0;0.92;0;0" keyTimes="{s_kt}" dur="{cycle:.1f}s" repeatCount="indefinite"/>'
+                          f'</circle>'
+                      )
+                  else:
+                      shockwaves.append(
+                          f'<circle cx="{wx:.1f}" cy="{wy:.1f}" r="2" fill="none" stroke="#C85A17" stroke-width="1.15" opacity="0">'
+                          f'<animate attributeName="r" values="2;2;15.5;2" keyTimes="{s_kt}" dur="{cycle:.1f}s" repeatCount="indefinite"/>'
+                          f'<animate attributeName="opacity" values="0;0.90;0;0" keyTimes="{s_kt}" dur="{cycle:.1f}s" repeatCount="indefinite"/>'
+                          f'</circle>'
+                          f'<circle cx="{wx:.1f}" cy="{wy:.1f}" r="1.5" fill="none" stroke="#DC9D5E" stroke-width="1.0" opacity="0">'
+                          f'<animate attributeName="r" values="1.5;1.5;10.5;1.5" keyTimes="{s_kt}" dur="{cycle:.1f}s" repeatCount="indefinite"/>'
+                          f'<animate attributeName="opacity" values="0;0.85;0;0" keyTimes="{s_kt}" dur="{cycle:.1f}s" repeatCount="indefinite"/>'
+                          f'</circle>'
+                      )
+
+              ship_vals.append(f"{waypoints[0][2]:.1f} {waypoints[0][3]:.1f}")
+              ship_kts.append(1.0)
+              rot_vals.append(rot_vals[0])
+              rot_kts.append(1.0)
+
+              ship_kt_str = format_strict_key_times(ship_kts)
+              rot_kt_str = format_strict_key_times(rot_kts)
+              ship_op_kt = format_strict_key_times([0.0, tour_end / cycle, (tour_end + 0.4) / cycle, 0.96, 1.0])
+
+              if is_dark:
+                  craft_defs = """
+            <defs>
+              <filter id="rgGlow-dark" x="-80%" y="-80%" width="260%" height="260%">
+                <feGaussianBlur stdDeviation="2.0" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>"""
+                  craft_attr = ' filter="url(#rgGlow-dark)"'
+                  craft_art = """
+                <polygon points="-8,0 -15,-2.5 -15,2.5" fill="#E29B42" opacity="0.94"/>
+                <polygon points="10,0 -7,-5.5 -4.2,0 -7,5.5" fill="#FFF5DF" stroke="#E29B42" stroke-width="0.8"/>
+                <polygon points="3.6,0 -1.6,-1.6 -1.6,1.6" fill="#132238"/>"""
+              else:
+                  # Light Mode: Dune Atreides Ornithopter with 4 rapidly flapping thin wing blades (Pure SMIL)
+                  craft_defs = ""
+                  craft_attr = ""
+                  craft_art = """
+                <g>
+                  <animateTransform attributeName="transform" type="rotate" values="-16 2 -1; 14 2 -1; -16 2 -1" dur="0.22s" repeatCount="indefinite"/>
+                  <line x1="2" y1="-1" x2="-3.5" y2="-13.5" stroke="#1C1917" stroke-width="1.2" stroke-linecap="round"/>
+                  <line x1="2" y1="-1" x2="-1.5" y2="-12.0" stroke="#C85A17" stroke-width="0.65" stroke-linecap="round" opacity="0.85"/>
+                </g>
+                <g>
+                  <animateTransform attributeName="transform" type="rotate" values="16 2 1; -14 2 1; 16 2 1" dur="0.22s" repeatCount="indefinite"/>
+                  <line x1="2" y1="1" x2="-3.5" y2="13.5" stroke="#1C1917" stroke-width="1.2" stroke-linecap="round"/>
+                  <line x1="2" y1="1" x2="-1.5" y2="12.0" stroke="#C85A17" stroke-width="0.65" stroke-linecap="round" opacity="0.85"/>
+                </g>
+                <g>
+                  <animateTransform attributeName="transform" type="rotate" values="12 -1.5 -1; -14 -1.5 -1; 12 -1.5 -1" dur="0.22s" repeatCount="indefinite"/>
+                  <line x1="-1.5" y1="-1" x2="-7.8" y2="-10.5" stroke="#6B5E53" stroke-width="1.0" stroke-linecap="round"/>
+                </g>
+                <g>
+                  <animateTransform attributeName="transform" type="rotate" values="-12 -1.5 1; 14 -1.5 1; -12 -1.5 1" dur="0.22s" repeatCount="indefinite"/>
+                  <line x1="-1.5" y1="1" x2="-7.8" y2="10.5" stroke="#6B5E53" stroke-width="1.0" stroke-linecap="round"/>
+                </g>
+                <polygon points="-8.5,0 -13.5,-3.2 -11.5,0 -13.5,3.2" fill="#C85A17"/>
+                <polygon points="10.5,0 3.2,-2.6 -9.2,-1.2 -11.2,0 -9.2,1.2 3.2,2.6" fill="#1C1917" stroke="#C85A17" stroke-width="0.65" stroke-linejoin="round"/>
+                <polygon points="7.5,0 2.4,-1.4 0.8,0 2.4,1.4" fill="#F3EDE5"/>"""
+
+              m_labels = month_labels_from_weeks(data["week_dates"], start_x, step_x)
+              month_svg = "".join(
+                  f'<text x="{mx:.1f}" y="22" font-family="{FONT_MONO}" font-size="9" fill="{p["muted"]}" letter-spacing="0.8">{ml}</text>'
+                  for mx, ml in m_labels
+              )
+              day_svg = (
+                  f'<text x="36" y="{start_y + 1*step_y + 3:.1f}" text-anchor="end" font-family="{FONT_MONO}" font-size="8.5" fill="{p["subtle"]}">MON</text>'
+                  f'<text x="36" y="{start_y + 3*step_y + 3:.1f}" text-anchor="end" font-family="{FONT_MONO}" font-size="8.5" fill="{p["subtle"]}">WED</text>'
+                  f'<text x="36" y="{start_y + 5*step_y + 3:.1f}" text-anchor="end" font-family="{FONT_MONO}" font-size="8.5" fill="{p["subtle"]}">FRI</text>'
+              )
+
+              return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 206" width="850" height="206">{craft_defs}
+            {month_svg}
+            {day_svg}
+            {"".join(dim_svg)}
+            {"".join(lit_svg)}
+            {"".join(warp_beams)}
+            {"".join(shockwaves)}
+
+            <g{craft_attr}>
+              <animateTransform attributeName="transform" type="translate" values="{';'.join(ship_vals)}" keyTimes="{ship_kt_str}" dur="{cycle:.1f}s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="1;1;0;0;1" keyTimes="{ship_op_kt}" dur="{cycle:.1f}s" repeatCount="indefinite"/>
+              <g>
+                <animateTransform attributeName="transform" type="rotate" values="{';'.join(rot_vals)}" keyTimes="{rot_kt_str}" dur="{cycle:.1f}s" repeatCount="indefinite"/>
+                {craft_art}
+              </g>
+            </g>
+
+            <text x="54" y="196" font-family="{FONT_MONO}" font-size="9" fill="{p['subtle']}" letter-spacing="0.6">{escape(subtitle)}</text>
+            <text x="822" y="196" text-anchor="end" font-family="{FONT_MONO}" font-size="9" fill="{p['subtle']}" letter-spacing="0.6">{len(waypoints)} JUMPS · {len(lit_cells)} NODES</text>
+          </svg>"""
+
+
+          def main():
+              data = fetch_github_data(USERNAME, TOKEN)
+              now_utc = datetime.datetime.now(datetime.timezone.utc)
+              daily_seed = now_utc.toordinal() * 31 + 109
+
+              modes = ["sweep", "wave", "transit"]
+              if MODE in modes:
+                  active_mode = MODE
+                  mode_suffix = f"UPDATED {now_utc.strftime('%Y-%m-%d %H:%M UTC')}"
+              else:
+                  active_mode = modes[now_utc.timetuple().tm_yday % 3]
+                  mode_suffix = f"AUTO-ROTATE DAILY · {now_utc.strftime('%Y-%m-%d')}"
+
+              total_files = 0
+              for theme_name in ("dark", "light"):
+                  titles = PALETTES[theme_name]["mode_titles"]
+                  outputs = {
+                      f"horizon-line-{theme_name}.svg": build_horizon_accent(theme_name),
+                      f"stats-{theme_name}.svg": build_stats_strip(data, theme_name),
+                      f"activity-sweep-{theme_name}.svg": build_activity_sweep(
+                          data, f"{titles['sweep']} · {mode_suffix}", theme_name
+                      ),
+                      f"activity-wave-{theme_name}.svg": build_activity_wave(
+                          data, f"{titles['wave']} · {mode_suffix}", theme_name
+                      ),
+                      f"activity-transit-{theme_name}.svg": build_activity_transit(
+                          data, f"{titles['transit']} · {mode_suffix}", theme_name, daily_seed
+                      ),
+                  }
+                  for fname, content in outputs.items():
+                      with open(os.path.join(OUT_DIR, fname), "w", encoding="utf-8") as f:
+                          f.write(content)
+                      total_files += 1
+
+                  shutil.copyfile(
+                      os.path.join(OUT_DIR, f"activity-{active_mode}-{theme_name}.svg"),
+                      os.path.join(OUT_DIR, f"activity-active-{theme_name}.svg"),
+                  )
+                  total_files += 1
+
+              print(f"[OK] Generated {total_files} transparent SVGs (Light=Dune, Dark=Interstellar). Active mode: {active_mode}")
+
+
+          if __name__ == "__main__":
+              main()
+
+      - name: Push SVGs to output branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd dist
+          git init -b output
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "chore: update Dune Light × Interstellar Dark SVGs [skip ci]"
+          git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" output:output
