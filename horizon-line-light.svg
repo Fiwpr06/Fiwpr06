@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 56" width="850" height="56">
+  <defs>
+    <linearGradient id="hzDuneMain" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#E8CFAF" stop-opacity="0"/>
+      <stop offset="16%" stop-color="#DC9D5E" stop-opacity="0.82"/>
+      <stop offset="46%" stop-color="#C85A17" stop-opacity="0.96"/>
+      <stop offset="72%" stop-color="#E07A2F" stop-opacity="0.84"/>
+      <stop offset="88%" stop-color="#DC9D5E" stop-opacity="0.36"/>
+      <stop offset="100%" stop-color="#E8CFAF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="hzDuneEcho" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#E8CFAF" stop-opacity="0"/>
+      <stop offset="28%" stop-color="#DC9D5E" stop-opacity="0.44"/>
+      <stop offset="68%" stop-color="#8A370A" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#8A370A" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <path d="M 12 45 Q 240 12 454 29 T 838 40" fill="none" stroke="url(#hzDuneMain)" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M 86 49 Q 320 24 548 37 T 792 47" fill="none" stroke="url(#hzDuneEcho)" stroke-width="0.8" stroke-linecap="round"/>
+  <g>
+    <animateMotion dur="15s" repeatCount="indefinite" path="M 12 45 Q 240 12 454 29 T 838 40"/>
+    <animate attributeName="opacity" values="0;0.96;0.96;0" keyTimes="0;0.14;0.86;1" dur="15s" repeatCount="indefinite"/>
+    <circle cx="0" cy="0" r="4.6" fill="#E07A2F" opacity="0.22"/>
+    <circle cx="0" cy="0" r="2.2" fill="#C85A17"/>
+    <circle cx="0" cy="0" r="0.9" fill="#FFF7ED"/>
+  </g>
+</svg>

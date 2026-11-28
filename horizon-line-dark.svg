@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 56" width="850" height="56">
+  <defs>
+    <linearGradient id="hzDark" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#7BA7D1" stop-opacity="0"/>
+      <stop offset="18%" stop-color="#7BA7D1" stop-opacity="0.52"/>
+      <stop offset="44%" stop-color="#E29B42" stop-opacity="0.92"/>
+      <stop offset="60%" stop-color="#FFF5DF" stop-opacity="0.98"/>
+      <stop offset="82%" stop-color="#2D527A" stop-opacity="0.52"/>
+      <stop offset="100%" stop-color="#2D527A" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="hzGlow" cx="52%" cy="68%" r="46%">
+      <stop offset="0%" stop-color="#E29B42" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#2D527A" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="hzBlur" x="-10%" y="-80%" width="120%" height="260%">
+      <feGaussianBlur stdDeviation="2.8" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <ellipse cx="440" cy="36" rx="340" ry="18" fill="url(#hzGlow)"/>
+  <path d="M 14 46 Q 425 4 836 46" fill="none" stroke="url(#hzDark)" stroke-width="1.55" stroke-linecap="round" filter="url(#hzBlur)"/>
+  <path d="M 110 49 Q 425 18 740 49" fill="none" stroke="#2D527A" stroke-width="0.6" opacity="0.34"/>
+  <circle r="2.2" fill="#FFF5DF" filter="url(#hzBlur)">
+    <animateMotion dur="14s" repeatCount="indefinite" path="M 14 46 Q 425 4 836 46"/>
+    <animate attributeName="opacity" values="0;0.96;0.96;0" keyTimes="0;0.14;0.86;1" dur="14s" repeatCount="indefinite"/>
+  </circle>
+</svg>
